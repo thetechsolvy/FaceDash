@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Upload, Star Rating & Comments</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>FaceDash</h1>
+
+    <!-- Upload Section -->
+    <div class="upload-section">
+        <input type="file" id="imageUpload" accept="image/*" required>
+        <input type="text" id="picName" placeholder="Image Name (One Word)" required>
+        <input type="text" id="uploaderNickname" placeholder="Your Nickname" required>
+        <button id="uploadBtn">Upload Image</button>
+    </div>
+
+    <h2>Uploaded Images</h2>
+    <div id="imageGallery"></div>
+
+    <h2>Leaderboard</h2>
+    <ul id="leaderboard"></ul>
+
+    <h2>Project Link</h2>
+    <p id="projectLink"></p>
+
+    <script type="module">
+        // Firebase Import
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
+        import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7CbIEACQhegopI-wU5lp1hvwEADvuV40",
+            authDomain: "faceslash-dd1d3.firebaseapp.com",
+            projectId: "faceslash-dd1d3",
+            storageBucket: "faceslash-dd1d3.appspot.com",
+            messagingSenderId: "97624155043",
+            appId: "1:97624155043:web:e6e3dddbc52d3dd7bf3016",
+            measurementId: "G-31RGP3EJFH"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const storage = getStorage(app);
+        const db = getFirestore(app);
+
+        // Data structure to hold images, ratings, comments, and nicknames
+        const imagesData = {};
+
+        // Upload Image Functionality
+        document.getElementById('uploadBtn').addEventListener('click', function () {
+            const file = document.getElementById('imageUpload').files[0];
+            const picName = document.getElementById('picName').value;
+            const uploaderNickname = document.getElementById('uploaderNickname').value;
+
+            if (!file || !picName || !uploaderNickname) {
+                alert("Please provide an image, name, and nickname.");
+                return;
+            }
+
+            const storageRef = ref(storage, `images/${file.name}`);
+            uploadBytes(storageRef, file).then(() => {
+                getDownloadURL(storageRef).then(url => {
+                    const imageId = file.name;
+                    imagesData[imageId] = { url, uploaderNickname, picName, ratings: [], comments: [] };
+
+                    displayImage(url, imageId);
+                    updateLeaderboard();
+                    addProjectLink("https://your-project-link.com"); // Update this link as needed
+
+                    alert("Image uploaded successfully!");
+                    document.getElementById('imageUpload').value = "";
+                    document.getElementById('picName').value = "";
+                    document.getElementById('uploaderNickname').value = "";
+                });
+            }).catch(error => {
+                console.error("Error uploading file:", error);
+            });
+        });
+
+        // Display uploaded images with star rating and comments
+        function displayImage(url, imageId) {
+            const imgContainer = document.createElement('div');
+            imgContainer.className = 'image-container';
+
+            const img = document.createElement('img');
+            img.src = url;
+            img.style.width = '100px';
+
+            const profileInfo = document.createElement('div');
+            profileInfo.className = 'profile-info';
+            const picName = imagesData[imageId].picName;
+            const uploaderNickname = imagesData[imageId].uploaderNickname;
+
+            profileInfo.innerHTML = `<strong>Image Name:</strong> ${picName} <br>
+                                     <strong>Uploaded by:</strong> ${uploaderNickname}`;
+
+            const rateDiv = document.createElement('div');
+            rateDiv.className = 'rating-container';
+
+            const nicknameInput = document.createElement('input');
+            nicknameInput.placeholder = 'Enter your nickname';
+
+            const commentInput = document.createElement('input');
+            commentInput.placeholder = 'Add a comment';
+
+            const submitBtn = document.createElement('button');
+            submitBtn.innerHTML = 'Submit Rating';
+            submitBtn.className = 'submit-btn';
+
+            // Star rating system
+            let rating = 0;
+            for (let i = 1; i <= 5; i++) {
+                const star = document.createElement('span');
+                star.className = 'star';
+                star.innerHTML = '☆'; // Empty star
+
+                star.addEventListener('click', function () {
+                    rating = i;
+                    [...rateDiv.getElementsByClassName('star')].forEach((s, idx) => {
+                        s.innerHTML = idx < i ? '★' : '☆'; // Filled star or empty
+                    });
+                });
+
+                rateDiv.appendChild(star);
+            }
+
+            // Submit rating, comment, and nickname
+            submitBtn.addEventListener('click', function () {
+                const nickname = nicknameInput.value;
+                const comment = commentInput.value;
+                if (!nickname || rating === 0) {
+                    alert("Please enter a nickname and select a rating.");
+                    return;
+                }
+
+                imagesData[imageId].comments.push({ nickname, comment, rating });
+                updateLeaderboard();
+            });
+
+            imgContainer.appendChild(img);
+            imgContainer.appendChild(profileInfo);
+            imgContainer.appendChild(nicknameInput);
+            imgContainer.appendChild(commentInput);
+            imgContainer.appendChild(rateDiv);
+            imgContainer.appendChild(submitBtn);
+            document.getElementById('imageGallery').appendChild(imgContainer);
+        }
+
+        // Update leaderboard based on ratings
+        function updateLeaderboard() {
+            const leaderboard = Object.entries(imagesData)
+                .map(([id, data]) => {
+                    const averageRating = data.comments.length > 0 
+                        ? (data.comments.reduce((sum, c) => sum + c.rating, 0) / data.comments.length).toFixed(2)
+                        : 0;
+
+                    return { id, url: data.url, averageRating, comments: data.comments, picName: data.picName, uploaderNickname: data.uploaderNickname };
+                })
+                .sort((a, b) => b.averageRating - a.averageRating);
+
+            const leaderboardHTML = leaderboard.map((entry, index) =>
+                `<li>
+                    <img src="${entry.url}" alt="Image" class="leaderboard-img">
+                    <span>${index + 1}. ${entry.picName} - Uploaded by: ${entry.uploaderNickname} | Rating: ${entry.averageRating} ⭐</span>
+                    <p>Comments:</p>
+                    <p>${entry.comments.map(c => `<strong>${c.nickname}:</strong> ${c.comment}`).join('<br>')}</p>
+                </li>`
+            ).join('');
+
+            document.getElementById('leaderboard').innerHTML = leaderboardHTML;
+        }
+
+        // Add project link to Firestore
+        async function addProjectLink(link) {
+            try {
+                await addDoc(collection(db, "links"), {
+                    url: link,
+                    timestamp: new Date()
+                });
+                console.log("Project link added successfully");
+                displayProjectLink();
+            } catch (e) {
+                console.error("Error adding project link: ", e);
+            }
+        }
+
+        // Display project link
+        async function displayProjectLink() {
+            const querySnapshot = await getDocs(collection(db, "links"));
+            querySnapshot.forEach((doc) => {
+                const link = doc.data().url;
+                document.getElementById('projectLink').innerText = link;
+            });
+        }
+
+        // Initial call to display project link
+        displayProjectLink();
+    </script>
+</body>
+</html>
